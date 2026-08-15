@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -720,6 +722,96 @@ class RunnerTests(unittest.TestCase):
             ).read_text(encoding="utf-8").splitlines()
             self.assertEqual(manifest["configuration"]["frame_stride"], 1)
             self.assertTrue(all(json.loads(line) for line in timing_lines))
+
+    def test_modality_groups_run_concurrently(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "video.mp4"
+            path.write_bytes(b"video")
+            config = self._config(directory, ("scene", "dialogue"))
+            source = VideoSource(video_id="video-1", path=path)
+            intervals: dict[str, tuple[float, float]] = {}
+            intervals_lock = threading.Lock()
+
+            def timed_scene_indexer(source, *, config, **_):
+                started = time.monotonic()
+                time.sleep(0.5)
+                with intervals_lock:
+                    intervals["scene"] = (started, time.monotonic())
+                return visual_result({"scene_frames": 1})
+
+            def timed_dialogue_indexer(source, *, config, **_):
+                started = time.monotonic()
+                time.sleep(0.5)
+                with intervals_lock:
+                    intervals["dialogue"] = (started, time.monotonic())
+                return {"dialogue_phrases": 1}
+
+            with (
+                patch("vidxp.core.runner.require_dependencies"),
+                patch(
+                    "vidxp.capabilities.visual.index_visuals",
+                    side_effect=timed_scene_indexer,
+                ),
+                patch(
+                    "vidxp.capabilities.dialogue.operations.index_dialogue",
+                    side_effect=timed_dialogue_indexer,
+                ),
+                patch(
+                    "vidxp.core.manifest.execution_state",
+                    return_value=EXECUTION_STATE,
+                ),
+            ):
+                run_index([source], config, storage=FakeStorage())
+
+            self.assertEqual(set(intervals), {"scene", "dialogue"})
+            scene_start, scene_end = intervals["scene"]
+            dialogue_start, dialogue_end = intervals["dialogue"]
+            overlap = min(scene_end, dialogue_end) - max(
+                scene_start, dialogue_start
+            )
+            self.assertGreater(
+                overlap,
+                0.1,
+                "visual and dialogue groups did not overlap in time",
+            )
+
+    def test_parallel_modality_stages_both_present_in_manifest(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "video.mp4"
+            path.write_bytes(b"video")
+            config = self._config(directory, ("scene", "dialogue"))
+            source = VideoSource(video_id="video-1", path=path)
+            with (
+                patch("vidxp.core.runner.require_dependencies"),
+                patch(
+                    "vidxp.capabilities.visual.index_visuals",
+                    return_value=visual_result(
+                        {"scene_frames": 1},
+                        {
+                            "frame_stream": 0.2,
+                            "scene": 0.4,
+                            "visual_total": 0.6,
+                        },
+                    ),
+                ),
+                patch(
+                    "vidxp.capabilities.dialogue.operations.index_dialogue",
+                    return_value={"dialogue_phrases": 1},
+                ),
+                patch(
+                    "vidxp.core.manifest.execution_state",
+                    return_value=EXECUTION_STATE,
+                ),
+            ):
+                manifest = run_index([source], config, storage=FakeStorage())
+
+            stages = manifest["videos"]["video-1"]["stages"]
+            self.assertIn("visual_indexing", stages)
+            self.assertIn("dialogue_indexing", stages)
+            self.assertIn("scene", stages)
+            summary = manifest["videos"]["video-1"]["summary"]
+            self.assertEqual(summary["scene_frames"], 1)
+            self.assertEqual(summary["dialogue_phrases"], 1)
 
 
 if __name__ == "__main__":

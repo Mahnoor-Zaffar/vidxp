@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Sequence
@@ -247,23 +248,56 @@ def _run_enabled_modalities(
     registry: CapabilityRegistry,
     runtime: ModelRuntimePort,
 ) -> dict[str, Any]:
-    summary: dict[str, Any] = {}
-    for names in _index_groups(config.enabled_modalities, registry):
+    groups = _index_groups(config.enabled_modalities, registry)
+
+    def run_group(names: tuple[str, ...]) -> dict[str, Any]:
         cancellation.raise_if_cancelled()
         set_stage(str(registry.get(names[0]).index_stage))
-        summary.update(
-            _run_capability_group(
-                names,
-                source,
-                config,
-                storage,
-                manifest,
-                cancellation,
-                progress_callback,
-                registry,
-                runtime,
-            )
+        return _run_capability_group(
+            names,
+            source,
+            config,
+            storage,
+            manifest,
+            cancellation,
+            progress_callback,
+            registry,
+            runtime,
         )
+
+    if len(groups) <= 1:
+        return run_group(groups[0])
+
+    results: dict[int, dict[str, Any]] = {}
+    errors: list[BaseException] = []
+    errors_lock = threading.Lock()
+
+    def run_group_worker(index: int, names: tuple[str, ...]) -> None:
+        try:
+            results[index] = run_group(names)
+        except BaseException as exc:
+            with errors_lock:
+                errors.append(exc)
+
+    threads = [
+        threading.Thread(
+            target=run_group_worker,
+            args=(index, names),
+            name=f"vidxp-modality-{names[0]}",
+        )
+        for index, names in enumerate(groups)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    if errors:
+        raise errors[0]
+
+    summary: dict[str, Any] = {}
+    for index in range(len(groups)):
+        summary.update(results[index])
     return summary
 
 
