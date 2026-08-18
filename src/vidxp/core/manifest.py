@@ -7,6 +7,7 @@ import platform
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
@@ -250,6 +251,7 @@ class ManifestStore:
         self.checkpoint_directory = (
             self.run_directory / CHECKPOINT_DIRECTORY
         )
+        self._lock = threading.Lock()
 
     def _checkpoint_path(self, video_id: str) -> Path:
         digest = hashlib.sha256(video_id.encode("utf-8")).hexdigest()
@@ -447,18 +449,19 @@ class ManifestStore:
         seconds: float,
         stats: Mapping[str, Any],
     ) -> None:
-        timing = {
-            "video_id": video_id,
-            "stage": stage,
-            "seconds": seconds,
-            "stats": dict(stats),
-            "recorded_at": utc_now(),
-        }
-        _append_jsonl(self.timings_path, timing)
-        manifest = self.read()
-        manifest["videos"][video_id]["stages"][stage] = timing
-        manifest["updated_at"] = utc_now()
-        self.write(manifest)
+        with self._lock:
+            timing = {
+                "video_id": video_id,
+                "stage": stage,
+                "seconds": seconds,
+                "stats": dict(stats),
+                "recorded_at": utc_now(),
+            }
+            _append_jsonl(self.timings_path, timing)
+            manifest = self.read()
+            manifest["videos"][video_id]["stages"][stage] = timing
+            manifest["updated_at"] = utc_now()
+            self.write(manifest)
 
     def complete_video(
         self,
@@ -467,27 +470,28 @@ class ManifestStore:
         checksum: str,
         summary: Mapping[str, Any],
     ) -> None:
-        checkpoint = {
-            "schema_version": MANIFEST_SCHEMA_VERSION,
-            "state": "complete",
-            "video_id": video_id,
-            "sha256": checksum,
-            "config_fingerprint": self.config.fingerprint(),
-            "completed_at": utc_now(),
-            "summary": dict(summary),
-        }
-        write_json_atomic(self._checkpoint_path(video_id), checkpoint)
-        manifest = self.read()
-        video = manifest["videos"][video_id]
-        video["state"] = "complete"
-        video["completed_at"] = checkpoint["completed_at"]
-        video["summary"] = dict(summary)
-        if video_id not in manifest["completed_videos"]:
-            manifest["completed_videos"].append(video_id)
-        manifest["completed_videos"].sort()
-        self._refresh_runtime(manifest)
-        manifest["updated_at"] = utc_now()
-        self.write(manifest)
+        with self._lock:
+            checkpoint = {
+                "schema_version": MANIFEST_SCHEMA_VERSION,
+                "state": "complete",
+                "video_id": video_id,
+                "sha256": checksum,
+                "config_fingerprint": self.config.fingerprint(),
+                "completed_at": utc_now(),
+                "summary": dict(summary),
+            }
+            write_json_atomic(self._checkpoint_path(video_id), checkpoint)
+            manifest = self.read()
+            video = manifest["videos"][video_id]
+            video["state"] = "complete"
+            video["completed_at"] = checkpoint["completed_at"]
+            video["summary"] = dict(summary)
+            if video_id not in manifest["completed_videos"]:
+                manifest["completed_videos"].append(video_id)
+            manifest["completed_videos"].sort()
+            self._refresh_runtime(manifest)
+            manifest["updated_at"] = utc_now()
+            self.write(manifest)
 
     def fail_video(self, video_id: str, stage: str, error: str) -> None:
         failure = {
