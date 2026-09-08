@@ -584,7 +584,7 @@ def index_latency_command(
     modalities: Annotated[
         str,
         typer.Option(
-            help="Comma-separated modality names: scene,actor,dialogue."
+            help="Comma-separated modality names: scene,actor,speech."
         ),
     ] = "scene",
     videos: Annotated[
@@ -619,7 +619,7 @@ def index_latency_command(
         Literal["transcript", "transcribe"],
         typer.Option(
             help=(
-                "'transcript' supplies a synthetic transcript for dialogue "
+                "'transcript' supplies a synthetic transcript for speech "
                 "embedding (no real transcription). 'transcribe' runs "
                 "real whisper on audio (for synthetic clips this also "
                 "requires --audio-mode flite)."
@@ -685,10 +685,10 @@ def index_latency_command(
     for modality in selected:
         _require_benchmark_dependencies(modality)
 
-    if corpus is not None and "dialogue" in selected:
+    if corpus is not None and "speech" in selected:
         if input_mode != "transcribe":
             raise typer.BadParameter(
-                "Real corpora have no released transcripts; dialogue "
+                "Real corpora have no released transcripts; speech "
                 "requires --input-mode transcribe.",
                 param_hint="--input-mode",
             )

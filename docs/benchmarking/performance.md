@@ -27,7 +27,7 @@ FFmpeg's `lavfi` source filters:
 | `--input-mode` | `transcript` | `transcript` or `transcribe` |
 
 Video is generated via `testsrc2` (colour bars + timestamp). When
-`--input-mode transcript` and `dialogue` is enabled, a deterministic
+`--input-mode transcript` and `speech` is enabled, a deterministic
 synthetic transcript (seeded PRNG over a fixed English vocabulary) is
 supplied without real transcription. When `input-mode transcribe` is
 used, `--audio-mode flite` must also be set and libflite must be
@@ -50,7 +50,7 @@ can sweep the whole prepared split.
 | `--videos` | Maximum number of real clips to index |
 | `--duration-seconds`, `--fps`, `--resolution`, `--audio-mode` | Ignored (describe synthetic generation only) |
 
-Real corpora have no released transcripts: when `dialogue` is selected,
+Real corpora have no released transcripts: when `speech` is selected,
 `--input-mode transcribe` is required so VidXP transcribes the media with
 Whisper. The report and run manifest record the corpus as `kind: "real"`
 with name, source, clip count, total bytes, duration range, and containers;
@@ -69,7 +69,7 @@ timing infrastructure (`core/manifest.py:record_stage`):
 | `scene` | scene | SigLIP2 embedding (frames/s) |
 | `actor` | actor | OpenCV detect + recognise (frames/s) |
 | `visual_indexing` | all visual | Combined group wall time |
-| `dialogue_indexing` | dialogue | Embedding throughput (phrases/s) |
+| `speech_indexing` | speech | Embedding throughput (phrases/s) |
 
 Peak RSS is captured via `resource.getrusage(RUSAGE_SELF).ru_maxrss`
 (POSIX only; `None` on Windows, reported in bytes on macOS, KiB on
@@ -136,7 +136,7 @@ Report schema:
 - Actors are not present in `testsrc2` video; `actor` stage measures
   the per-frame face-detection overhead with zero detections.
 - When `input_mode=transcript`, no real whisper transcription occurs;
-  dialogue embedding is measured on a synthetic transcript.
+  speech embedding is measured on a synthetic transcript.
 - True transcription latency (`input_mode=transcribe`) requires a
   speech source (`--audio-mode flite`) and libflite in the FFmpeg
   build; the generated speech is a short fixed sentence and does not
@@ -156,10 +156,10 @@ Report schema:
 # Default: single 8-second 320x180 clip, scene-only, 1 rep
 vidxp benchmark index-latency --run-id my-baseline
 
-# Scene + actor + dialogue (synthetic transcript), 3 reps, compare with baseline
+# Scene + actor + speech (synthetic transcript), 3 reps, compare with baseline
 vidxp benchmark index-latency \
   --run-id v2-compare \
-  --modalities scene,actor,dialogue \
+  --modalities scene,actor,speech \
   --videos 2 \
   --duration-seconds 12 \
   --repetitions 3 \
@@ -169,7 +169,7 @@ vidxp benchmark index-latency \
 # Real transcription (requires libflite in ffmpeg)
 vidxp benchmark index-latency \
   --run-id transcribe-test \
-  --modalities dialogue \
+  --modalities speech \
   --input-mode transcribe \
   --audio-mode flite \
   --device cpu
@@ -191,11 +191,11 @@ vidxp benchmark index-latency \
   --repetitions 3 \
   --json
 
-# Real dialogue requires transcription over real audio
+# Real speech requires transcription over real audio
 vidxp benchmark index-latency \
-  --run-id didemo-dialogue \
+  --run-id didemo-speech \
   --corpus didemo \
-  --modalities dialogue \
+  --modalities speech \
   --input-mode transcribe \
   --videos 2
 ```

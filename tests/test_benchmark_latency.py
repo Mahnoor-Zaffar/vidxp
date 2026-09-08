@@ -73,7 +73,7 @@ class LatencyValidationTests(unittest.TestCase):
     def test_rejects_transcribe_without_flite(self):
         with self.assertRaises(ValueError):
             validate_latency_options(
-                modalities=("scene", "dialogue"),
+                modalities=("scene", "speech"),
                 videos=1,
                 duration_seconds=8.0,
                 fps=24,
@@ -87,7 +87,7 @@ class LatencyValidationTests(unittest.TestCase):
 
     def test_accepts_transcribe_with_flite(self):
         selected = validate_latency_options(
-            modalities=("dialogue",),
+            modalities=("speech",),
             videos=1,
             duration_seconds=8.0,
             fps=24,
@@ -98,11 +98,11 @@ class LatencyValidationTests(unittest.TestCase):
             audio_mode="flite",
             baseline_tolerance=0.15,
         )
-        self.assertEqual(selected, ("dialogue",))
+        self.assertEqual(selected, ("speech",))
 
     def test_real_corpus_transcribe_does_not_require_flite(self):
         selected = validate_latency_options(
-            modalities=("dialogue",),
+            modalities=("speech",),
             videos=1,
             duration_seconds=8.0,
             fps=24,
@@ -114,7 +114,7 @@ class LatencyValidationTests(unittest.TestCase):
             baseline_tolerance=0.15,
             real_corpus=True,
         )
-        self.assertEqual(selected, ("dialogue",))
+        self.assertEqual(selected, ("speech",))
 
     def test_deduplicates_modalities(self):
         selected = validate_latency_options(

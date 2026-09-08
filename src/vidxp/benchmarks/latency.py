@@ -31,7 +31,7 @@ LATENCY_BENCHMARK = "latency"
 LATENCY_SPLIT = "synthetic"
 LATENCY_SCHEMA_VERSION = 1
 DEFAULT_CORPUS_SEED = 2026
-SUPPORTED_MODALITIES = ("scene", "actor", "dialogue")
+SUPPORTED_MODALITIES = ("scene", "actor", "speech")
 NAMED_CORPORA = ("didemo",)
 MEDIA_EXTENSIONS = (".mp4", ".webm", ".mov", ".mkv", ".m4v", ".avi")
 
@@ -39,7 +39,7 @@ _STAGE_RATES: Mapping[str, str] = {
     "scene": "scene_frames",
     "actor": "actor_frames",
     "frame_stream": "source_frames_advanced",
-    "dialogue_indexing": "dialogue_phrases",
+    "speech_indexing": "dialogue_phrases",
 }
 
 _VOCABULARY = (
@@ -157,7 +157,7 @@ def validate_latency_options(
         raise ValueError("input_mode must be 'transcript' or 'transcribe'.")
     if audio_mode not in {"none", "sine", "flite"}:
         raise ValueError("audio_mode must be 'none', 'sine', or 'flite'.")
-    if "dialogue" in selected and input_mode == "transcribe" and not real_corpus:
+    if "speech" in selected and input_mode == "transcribe" and not real_corpus:
         if audio_mode != "flite":
             raise ValueError(
                 "Real transcription requires a speech audio source; "
@@ -662,7 +662,7 @@ def discover_real_corpus(
 def build_real_corpus_sources(
     clips: Sequence[Mapping[str, Any]],
 ) -> list[VideoSource]:
-    """Build real media sources; dialogue is transcribed by the runner."""
+    """Build real media sources; speech is transcribed by the runner."""
     sources = []
     for clip in clips:
         video_name = clip["video_name"]
@@ -743,11 +743,11 @@ def run_latency(
     )
     if (
         real_media_directory is not None
-        and "dialogue" in selected
+        and "speech" in selected
         and input_mode == "transcript"
     ):
         raise ValueError(
-            "Real corpora have no released transcripts; dialogue requires "
+            "Real corpora have no released transcripts; speech requires "
             "--input-mode transcribe so VidXP transcribes the media."
         )
     spec: SyntheticCorpusSpec | RealCorpusSpec
