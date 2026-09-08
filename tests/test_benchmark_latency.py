@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from vidxp.benchmarks.common import benchmark_media_id
 from vidxp.benchmarks.latency import (
@@ -17,6 +18,7 @@ from vidxp.benchmarks.latency import (
     compare_baseline,
     discover_real_corpus,
     resolve_corpus_directory,
+    run_latency,
     synthetic_transcript,
     validate_latency_options,
 )
@@ -95,6 +97,22 @@ class LatencyValidationTests(unittest.TestCase):
             input_mode="transcribe",
             audio_mode="flite",
             baseline_tolerance=0.15,
+        )
+        self.assertEqual(selected, ("dialogue",))
+
+    def test_real_corpus_transcribe_does_not_require_flite(self):
+        selected = validate_latency_options(
+            modalities=("dialogue",),
+            videos=1,
+            duration_seconds=8.0,
+            fps=24,
+            width=320,
+            height=180,
+            repetitions=1,
+            input_mode="transcribe",
+            audio_mode="none",
+            baseline_tolerance=0.15,
+            real_corpus=True,
         )
         self.assertEqual(selected, ("dialogue",))
 
@@ -350,6 +368,16 @@ class RealCorpusResolutionTests(unittest.TestCase):
         self.assertEqual(directory, path)
         self.assertIsNone(name)
 
+    def test_directory_string_resolves_to_existing_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory, name = resolve_corpus_directory(temporary)
+        self.assertEqual(directory, Path(temporary))
+        self.assertIsNone(name)
+
+    def test_missing_directory_string_rejected(self):
+        with self.assertRaises(ValueError):
+            resolve_corpus_directory("/missing/corpus/media")
+
     def test_named_corpus_resolves_to_prepared_media(self):
         with tempfile.TemporaryDirectory() as temporary:
             data_dir = Path(temporary)
@@ -534,3 +562,109 @@ class BaselineCompatibilityTests(unittest.TestCase):
         baseline = self._report(self._synthetic_corpus(7))
         with self.assertRaises(ValueError):
             _validate_baseline_compatibility(report, baseline)
+
+
+class LatencyRunOrchestrationTests(unittest.TestCase):
+    """Drive run_latency against mocked storage and assert the repetition loop."""
+
+    @staticmethod
+    def _fake_manifest():
+        return {
+            "completed_at": "2026-08-18T00:00:00Z",
+            "git": {"revision": "abc123"},
+            "environment": {"platform": "test"},
+            "config_fingerprint": "test-fingerprint",
+        }
+
+    def _run(self, *, repetitions, reset):
+        fake_clips = [Path("/tmp/clip-000.mp4")]
+        fake_sources = [mock.Mock()]
+
+        class FakeStorage:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def size_bytes(self):
+                return 1234
+
+        fake_registry = mock.Mock()
+        fake_registry.model_specs.return_value = []
+        aggregate = {
+            "record_counts": {},
+            "processed_frames": 0,
+            "summary": {},
+            "stages": {},
+            "per_video": [],
+        }
+        with mock.patch(
+            "vidxp.benchmarks.latency.create_capability_registry",
+            return_value=fake_registry,
+        ), mock.patch("vidxp.benchmarks.latency.ModelRuntime"), mock.patch(
+            "vidxp.benchmarks.latency.VidXPSettings"
+        ), mock.patch(
+            "vidxp.benchmarks.latency.ensure_adapter_outputs"
+        ), mock.patch(
+            "vidxp.benchmarks.latency.generate_synthetic_corpus",
+            return_value=fake_clips,
+        ), mock.patch(
+            "vidxp.benchmarks.latency.build_latency_sources",
+            return_value=fake_sources,
+        ), mock.patch(
+            "vidxp.benchmarks.latency.IndexStorage",
+            return_value=FakeStorage(),
+        ), mock.patch(
+            "vidxp.benchmarks.latency.ManifestStore"
+        ), mock.patch(
+            "vidxp.benchmarks.latency.run_index",
+            return_value=self._fake_manifest(),
+        ) as fake_run_index, mock.patch(
+            "vidxp.benchmarks.latency._peak_rss_bytes",
+            return_value=1024,
+        ), mock.patch(
+            "vidxp.benchmarks.latency.aggregate_latency_runs",
+            return_value=aggregate,
+        ), mock.patch(
+            "vidxp.benchmarks.latency.write_json_atomic"
+        ), mock.patch(
+            "vidxp.benchmarks.latency.record_adapter_manifest"
+        ):
+            report = run_latency(
+                run_id="orchestration-test",
+                output_root="/tmp/benchmark_runs",
+                modalities=("scene",),
+                repetitions=repetitions,
+                reset=reset,
+            )
+        return report, fake_run_index
+
+    @staticmethod
+    def _reset_per_call(fake_run_index):
+        return [
+            call.kwargs["reset"]
+            for call in fake_run_index.call_args_list
+        ]
+
+    def test_every_repetition_runs_a_fresh_index_cycle(self):
+        report, fake_run_index = self._run(
+            repetitions=3,
+            reset=False,
+        )
+        self.assertEqual(len(fake_run_index.call_args_list), 3)
+        self.assertEqual(
+            self._reset_per_call(fake_run_index),
+            [False, True, True],
+        )
+        self.assertEqual(report["repetitions"], 3)
+
+    def test_reset_flag_applies_to_every_repetition(self):
+        _, fake_run_index = self._run(
+            repetitions=2,
+            reset=True,
+        )
+        self.assertEqual(
+            self._reset_per_call(fake_run_index),
+            [True, True],
+        )

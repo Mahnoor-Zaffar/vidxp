@@ -130,6 +130,7 @@ def validate_latency_options(
     input_mode: str,
     audio_mode: str,
     baseline_tolerance: float,
+    real_corpus: bool = False,
 ) -> tuple[str, ...]:
     selected = tuple(dict.fromkeys(modalities))
     if not selected:
@@ -156,7 +157,7 @@ def validate_latency_options(
         raise ValueError("input_mode must be 'transcript' or 'transcribe'.")
     if audio_mode not in {"none", "sine", "flite"}:
         raise ValueError("audio_mode must be 'none', 'sine', or 'flite'.")
-    if "dialogue" in selected and input_mode == "transcribe":
+    if "dialogue" in selected and input_mode == "transcribe" and not real_corpus:
         if audio_mode != "flite":
             raise ValueError(
                 "Real transcription requires a speech audio source; "
@@ -553,21 +554,25 @@ def resolve_corpus_directory(
 
     ``None`` selects synthetic media. Named corpora are looked up under
     ``<data_dir>/benchmarks/<name>/media`` as written by the benchmark
-    preparation commands.
+    preparation commands. Any other string is treated as a media
+    directory path and must exist on disk.
     """
     if corpus is None:
         return None, None
     if isinstance(corpus, Path):
         return corpus, None
+    if corpus not in NAMED_CORPORA:
+        directory = Path(corpus)
+        if not directory.is_dir():
+            raise ValueError(
+                "Corpus media directory not found: "
+                + str(directory)
+                + ". Run the matching `vidxp benchmark prepare` command "
+                "first, or point --corpus at an existing directory of "
+                "media files."
+            )
+        return directory, None
     name = corpus
-    if name not in NAMED_CORPORA:
-        raise ValueError(
-            "Unknown corpus "
-            + repr(name)
-            + "; expected one of "
-            + ", ".join(NAMED_CORPORA)
-            + " or a media directory path."
-        )
     if data_dir is None:
         raise ValueError(
             "A named corpus requires the application data directory."
@@ -719,6 +724,10 @@ def run_latency(
     corpus: str | Path | None = None,
     data_dir: str | Path | None = None,
 ) -> dict[str, Any]:
+    real_media_directory, corpus_name = resolve_corpus_directory(
+        corpus,
+        data_dir=data_dir,
+    )
     selected = validate_latency_options(
         modalities=modalities,
         videos=videos,
@@ -730,10 +739,7 @@ def run_latency(
         input_mode=input_mode,
         audio_mode=audio_mode,
         baseline_tolerance=baseline_tolerance,
-    )
-    real_media_directory, corpus_name = resolve_corpus_directory(
-        corpus,
-        data_dir=data_dir,
+        real_corpus=real_media_directory is not None,
     )
     if (
         real_media_directory is not None
@@ -836,13 +842,13 @@ def run_latency(
                 ),
                 media_overrides=bool(discovered["overrides"]),
             )
-        for _ in range(repetitions):
+        for repetition in range(repetitions):
             started = perf_counter()
             with IndexStorage(config) as storage:
                 manifest = run_index(
                     sources,
                     config,
-                    reset=reset,
+                    reset=reset or repetition > 0,
                     storage=storage,
                     manifest_store=ManifestStore(
                         config,

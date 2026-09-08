@@ -621,7 +621,8 @@ def index_latency_command(
             help=(
                 "'transcript' supplies a synthetic transcript for dialogue "
                 "embedding (no real transcription). 'transcribe' runs "
-                "real whisper on audio (requires --audio-mode flite)."
+                "real whisper on audio (for synthetic clips this also "
+                "requires --audio-mode flite)."
             )
         ),
     ] = "transcript",
