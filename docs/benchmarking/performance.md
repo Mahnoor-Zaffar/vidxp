@@ -59,8 +59,8 @@ the current run, so synthetic and real results never mix.
 
 ### Indexing measurement
 
-Each repetition runs the full indexing pipeline via `run_index()` with
-`reset=True`. The following stages are timed by the existing manifest
+Each repetition runs the full indexing pipeline via `run_index()`.
+The following stages are timed by the existing manifest
 timing infrastructure (`core/manifest.py:record_stage`):
 
 | Stage | Modality | Measures |
@@ -78,8 +78,13 @@ Linux).
 ### Repetitions
 
 When `--repetitions N` > 1, each repetition runs the full cycle
-(generate once, index each time after `reset`). Results are reported
+(generate once, reset the index between repetitions). Results are reported
 as mean, min, and max across all per-video per-repetition samples.
+
+Use a new `--run-id` to preserve an existing run. Reusing a run ID requires
+`--reset`, which rebuilds its index and replaces its report. Without that
+flag, the command stops before changing the existing run. Completed indexing
+is never resumed or skipped as part of a measured repetition.
 
 ### Baseline comparison
 

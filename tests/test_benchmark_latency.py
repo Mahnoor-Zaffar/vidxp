@@ -576,7 +576,7 @@ class LatencyRunOrchestrationTests(unittest.TestCase):
             "config_fingerprint": "test-fingerprint",
         }
 
-    def _run(self, *, repetitions, reset):
+    def _run(self, *, repetitions, reset, existing_run=False):
         fake_clips = [Path("/tmp/clip-000.mp4")]
         fake_sources = [mock.Mock()]
 
@@ -599,7 +599,7 @@ class LatencyRunOrchestrationTests(unittest.TestCase):
             "stages": {},
             "per_video": [],
         }
-        with mock.patch(
+        with tempfile.TemporaryDirectory() as output_root, mock.patch(
             "vidxp.benchmarks.latency.create_capability_registry",
             return_value=fake_registry,
         ), mock.patch("vidxp.benchmarks.latency.ModelRuntime"), mock.patch(
@@ -631,9 +631,13 @@ class LatencyRunOrchestrationTests(unittest.TestCase):
         ), mock.patch(
             "vidxp.benchmarks.latency.record_adapter_manifest"
         ):
+            if existing_run:
+                (Path(output_root) / "latency" / "orchestration-test").mkdir(
+                    parents=True
+                )
             report = run_latency(
                 run_id="orchestration-test",
-                output_root="/tmp/benchmark_runs",
+                output_root=output_root,
                 modalities=("scene",),
                 repetitions=repetitions,
                 reset=reset,
@@ -655,7 +659,7 @@ class LatencyRunOrchestrationTests(unittest.TestCase):
         self.assertEqual(len(fake_run_index.call_args_list), 3)
         self.assertEqual(
             self._reset_per_call(fake_run_index),
-            [True, True, True],
+            [False, True, True],
         )
         self.assertEqual(report["repetitions"], 3)
 
@@ -663,8 +667,22 @@ class LatencyRunOrchestrationTests(unittest.TestCase):
         _, fake_run_index = self._run(
             repetitions=2,
             reset=True,
+            existing_run=True,
         )
         self.assertEqual(
             self._reset_per_call(fake_run_index),
             [True, True],
         )
+
+    def test_existing_run_without_reset_is_preserved(self):
+        with tempfile.TemporaryDirectory() as output_root:
+            run_directory = Path(output_root) / "latency" / "existing-run"
+            run_directory.mkdir(parents=True)
+            report = run_directory / "report.json"
+            report.write_text('{"previous": true}', encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "new --run-id or pass --reset"):
+                run_latency(run_id="existing-run", output_root=output_root)
+
+            self.assertEqual(list(run_directory.iterdir()), [report])
+            self.assertEqual(report.read_text(encoding="utf-8"), '{"previous": true}')

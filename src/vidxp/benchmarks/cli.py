@@ -647,7 +647,7 @@ def index_latency_command(
     reset: Annotated[
         bool,
         typer.Option(
-            help="Retained for compatibility; every repetition resets its index."
+            help="Allow rebuilding the index for an existing latency run."
         ),
     ] = False,
     baseline: Annotated[

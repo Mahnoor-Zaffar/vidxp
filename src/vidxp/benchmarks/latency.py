@@ -724,7 +724,6 @@ def run_latency(
     corpus: str | Path | None = None,
     data_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    # Keep the reset argument for existing callers; measured runs never resume.
     real_media_directory, corpus_name = resolve_corpus_directory(
         corpus,
         data_dir=data_dir,
@@ -784,6 +783,11 @@ def run_latency(
         ),
     )
     run_directory = config.run_directory
+    if run_directory.exists() and not reset:
+        raise ValueError(
+            f"Latency run already exists: {run_directory}. "
+            "Choose a new --run-id or pass --reset to rebuild its index."
+        )
     registry = create_capability_registry(
         platform_runtime_checks=LOCAL_INDEX_RUNTIME_CHECKS
     )
@@ -843,13 +847,13 @@ def run_latency(
                 ),
                 media_overrides=bool(discovered["overrides"]),
             )
-        for _ in range(repetitions):
+        for repetition in range(repetitions):
             started = perf_counter()
             with IndexStorage(config) as storage:
                 manifest = run_index(
                     sources,
                     config,
-                    reset=True,
+                    reset=reset or repetition > 0,
                     storage=storage,
                     manifest_store=ManifestStore(
                         config,
