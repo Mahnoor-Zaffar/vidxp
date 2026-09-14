@@ -655,7 +655,7 @@ class LatencyRunOrchestrationTests(unittest.TestCase):
         self.assertEqual(len(fake_run_index.call_args_list), 3)
         self.assertEqual(
             self._reset_per_call(fake_run_index),
-            [False, True, True],
+            [True, True, True],
         )
         self.assertEqual(report["repetitions"], 3)
 

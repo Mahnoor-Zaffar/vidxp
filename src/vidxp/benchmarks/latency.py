@@ -724,6 +724,7 @@ def run_latency(
     corpus: str | Path | None = None,
     data_dir: str | Path | None = None,
 ) -> dict[str, Any]:
+    # Keep the reset argument for existing callers; measured runs never resume.
     real_media_directory, corpus_name = resolve_corpus_directory(
         corpus,
         data_dir=data_dir,
@@ -842,13 +843,13 @@ def run_latency(
                 ),
                 media_overrides=bool(discovered["overrides"]),
             )
-        for repetition in range(repetitions):
+        for _ in range(repetitions):
             started = perf_counter()
             with IndexStorage(config) as storage:
                 manifest = run_index(
                     sources,
                     config,
-                    reset=reset or repetition > 0,
+                    reset=True,
                     storage=storage,
                     manifest_store=ManifestStore(
                         config,

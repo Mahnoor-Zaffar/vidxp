@@ -646,7 +646,9 @@ def index_latency_command(
     ] = None,
     reset: Annotated[
         bool,
-        typer.Option(help="Clear any existing index before running."),
+        typer.Option(
+            help="Retained for compatibility; every repetition resets its index."
+        ),
     ] = False,
     baseline: Annotated[
         Path | None,
